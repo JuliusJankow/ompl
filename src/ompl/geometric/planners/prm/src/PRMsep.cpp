@@ -141,7 +141,7 @@ void ompl::geometric::PRMsep::constructRoadmap(const unsigned int max_number_mil
     const ompl::base::StateValidityCheckerPtr& svc = si_->getStateValidityChecker();
 
     // collect milestones and add them to the graph without connecting them to each other 
-    unsigned int counter=0;
+    unsigned int counter=0, rejection_counter=0;
     double sample_clearance;
     while(counter < max_number_milestones) {
         bool found = false;
@@ -149,27 +149,33 @@ void ompl::geometric::PRMsep::constructRoadmap(const unsigned int max_number_mil
         
         while (attempts < magic::FIND_INVALID_STATE_ATTEMPTS_WITHOUT_TERMINATION && !found) {
             if (sampler_->sample(workState)) {
-                double r_free = svc->clearance(workState);
-                sample_clearance = std::min(r_free, max_sample_clearance_);
-
                 // check if any other Vertex is in hyper sphere around new vertex
                 Vertex v = boost::add_vertex(g_);
                 stateProperty_[v] = workState;
                 
-                found = nn_->size() == 0 ? true : (distanceFunction(v, nn_->nearest(v)) > sample_clearance);
+                // if in box, evaluate cost function and compare to d_obstacle. Check only for 25 nearest
+                std::vector<Vertex> nn_list;
+                nn_->nearestK(v, magic::DEFAULT_NEAREST_NEIGHBORS, nn_list);
+                found = true;
+                double distance;
+                for (size_t i=0; i<nn_list.size() && found; i++) {
+                    base::State* st = stateProperty_[nn_list[i]];
+                    bool new_state = i==0;
+                    found = svc->isValid(workState, distance, st, new_state);
+                }
+                if (!found) rejection_counter++;
 
                 boost::remove_vertex(v, g_);
             }
             attempts++;
         }
         if(found) { 
-            double sample_connection_distance = std::max(3.0*sample_clearance, min_sample_connection_distance_);
             connectionStrategy_ = KStrategy<Vertex>(magic::DEFAULT_NEAREST_NEIGHBORS, nn_);
-            // connectionStrategy_ = KBoundedStrategy<Vertex>(magic::DEFAULT_NEAREST_NEIGHBORS, sample_connection_distance, nn_);
             addMilestone(si_->cloneState(workState));
             counter++;
             if (counter%1000 == 0) {
-                OMPL_INFORM("PRMsep: %d milestones and %d edges found...", milestoneCount(), edgeCount());
+                OMPL_INFORM("PRMsep: %d milestones and %d edges found. %d samples rejected meanwhile.", milestoneCount(), edgeCount(), rejection_counter);
+                rejection_counter = 0;
             }
         }
         else {
