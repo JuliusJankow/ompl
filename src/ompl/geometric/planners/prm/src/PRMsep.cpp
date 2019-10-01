@@ -381,5 +381,5 @@ ompl::base::PlannerStatus ompl::geometric::PRMsep::solve(const base::PlannerTerm
 
 ompl::base::Cost ompl::geometric::PRMsep::costHeuristic(Vertex v, Vertex goal) const
 {
-    return opt_->motionCost(stateProperty_[v], stateProperty_[goal]); // opt_->motionCostHeuristic(stateProperty_[v], stateProperty_[goal]); // use cost-to-go heuristic
+    return opt_->motionCostHeuristic(stateProperty_[v], stateProperty_[goal]); // opt_->motionCostHeuristic(stateProperty_[v], stateProperty_[goal]); // use cost-to-go heuristic
 }
