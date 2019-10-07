@@ -254,13 +254,33 @@ bool ompl::geometric::PRMsep::getNewGoalState(const base::PlannerTerminationCond
         return false;
     }
 
+    // collect newly sampled goal states
     while (!ptc()) {
-        const base::State* goal_state = pis_.nextGoal(ptc);
+        const base::State* goal_state = pis_.nextGoal();
+        if (goal_state == nullptr) {
+            break;
+        }
         if (goal_state && si_->isValid(goal_state)) {
-            v = addMilestone(si_->cloneState(goal_state));
-            return true;
+            goalM_.push_back(addMilestone(si_->cloneState(goal_state)));
         }
     }
+    
+    // select next goal state to perform A* on based on cost heuristic
+    int best_idx = -1;
+    base::Cost best_cost(opt_->infiniteCost());
+    for (size_t i=0; i<goalM_.size(); i++) {
+        base::Cost cost = costHeuristic(startM_[0], goalM_[i]);
+        if (opt_->isCostBetterThan(cost, best_cost)) {
+            best_cost = cost;
+            best_idx = (int)i;
+        }
+    }
+    if (best_idx != -1) {
+        v = goalM_[best_idx];
+        goalM_.erase(goalM_.begin() + best_idx);
+        return true;
+    }
+
     return false;
 }
 
@@ -270,6 +290,7 @@ bool ompl::geometric::PRMsep::constructOptimalSolution(const base::PlannerTermin
     base::Goal *g = pdef_->getGoal().get();
     base::Cost sol_cost(opt_->infiniteCost());
     Vertex goal;
+    goalM_.clear();
 
     while (!ptc()) {
         if (getNewGoalState(ptc, goal)) {
