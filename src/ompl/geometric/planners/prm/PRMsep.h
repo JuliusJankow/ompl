@@ -30,6 +30,8 @@ namespace ompl
 
             base::PlannerStatus solve(const base::PlannerTerminationCondition &ptc) override;
 
+            void solveCtoC(const base::State* q_start, const base::State* q_goal, double& duration, double& cost);
+
             double debugFreeSpace(base::State *state);
 
             void resetPlannerData() {

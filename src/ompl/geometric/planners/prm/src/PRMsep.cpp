@@ -8,6 +8,8 @@
 #include <boost/foreach.hpp>
 #include <boost/graph/astar_search.hpp>
 
+#include <chrono>
+
 #define foreach BOOST_FOREACH
 
 namespace ompl
@@ -56,6 +58,7 @@ void ompl::geometric::PRMsep::setup()
     if(pd_ != nullptr && !planner_data_set_) {
         copyPlannerDataToGraph();
         planner_data_set_ = true;
+        OMPL_INFORM("PRMsep: Set Roadmap with %d milestones and %d edges.", milestoneCount(), edgeCount());
     }
 
     OMPL_INFORM("PRMsep: Set up.");
@@ -149,6 +152,7 @@ void ompl::geometric::PRMsep::constructRoadmap(const unsigned int max_number_mil
         
         while (attempts < magic::FIND_INVALID_STATE_ATTEMPTS_WITHOUT_TERMINATION && !found) {
             if (sampler_->sample(workState)) {
+                found = true;/*
                 // check if any other Vertex is in hyper sphere around new vertex
                 Vertex v = boost::add_vertex(g_);
                 stateProperty_[v] = workState;
@@ -156,29 +160,33 @@ void ompl::geometric::PRMsep::constructRoadmap(const unsigned int max_number_mil
                 // if in box, evaluate cost function and compare to d_obstacle. Check only for 25 nearest
                 std::vector<Vertex> nn_list;
                 nn_->nearestK(v, magic::DEFAULT_NEAREST_NEIGHBORS, nn_list);
-                found = true;
                 double distance;
                 for (size_t i=0; i<nn_list.size() && found; i++) {
                     base::State* st = stateProperty_[nn_list[i]];
                     bool new_state = i==0;
-                    found = svc->isValid(workState, distance, st, new_state);
+                    if (svc->isValid(workState, distance, st, new_state) == false) {
+                        found = false;
+                        break;
+                    }
                 }
                 if (!found) rejection_counter++;
 
-                boost::remove_vertex(v, g_);
+                boost::remove_vertex(v, g_);*/
+                counter++;
             }
             attempts++;
         }
         if(found) { 
             connectionStrategy_ = KStrategy<Vertex>(magic::DEFAULT_NEAREST_NEIGHBORS, nn_);
             addMilestone(si_->cloneState(workState));
-            counter++;
-            if (counter%1000 == 0) {
+            //counter++;
+            if (milestoneCount()%1000 == 0) {
                 OMPL_INFORM("PRMsep: %d milestones and %d edges found. %d samples rejected meanwhile.", milestoneCount(), edgeCount(), rejection_counter);
                 rejection_counter = 0;
             }
         }
         else {
+            OMPL_INFORM("PRMsep: Construction of Roadmap aborted due to too many consecutive rejections.");
             break;
         }
     }
@@ -398,6 +406,37 @@ ompl::base::PlannerStatus ompl::geometric::PRMsep::solve(const base::PlannerTerm
     }
 
     return sol ? ompl::base::PlannerStatus::EXACT_SOLUTION : ompl::base::PlannerStatus::TIMEOUT;
+}
+
+void ompl::geometric::PRMsep::solveCtoC(const base::State* q_start, const base::State* q_goal, double& duration, double& cost)
+{
+    OMPL_INFORM("PRMsep: Search for an optimal path...");
+
+    if (!isSetup())
+        setup();
+
+    if (boost::num_vertices(g_) == 0) {
+        OMPL_INFORM("PRMsep: There is no roadmap available, construct a new one.");
+        constructRoadmap(10000);
+    }
+
+    startM_.clear();
+    startM_.push_back(addMilestone(si_->cloneState(q_start)));
+    goalM_.clear();
+    goalM_.push_back(addMilestone(si_->cloneState(q_goal)));
+    
+    auto start_chrono = std::chrono::steady_clock::now();
+    base::PathPtr p = constructSolution(startM_[0], goalM_[0]); 
+    auto duration_chrono = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start_chrono);
+    duration = (double)duration_chrono.count() / (1000.0*1000.0);
+
+    if (p) {
+        base::Cost pathCost = p->cost(opt_);
+        cost = pathCost.value();
+    }
+    else {
+        cost = -1.0;
+    }
 }
 
 ompl::base::Cost ompl::geometric::PRMsep::costHeuristic(Vertex v, Vertex goal) const

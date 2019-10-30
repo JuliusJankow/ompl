@@ -13,6 +13,8 @@ bool ompl::geometric::PathSimplifierOpt::reduceVertices(PathGeometric &path, uns
     std::vector<base::State *> &states = path.getStates();
     double total_cost_reduction = 0.0;
 
+    double resolution = 0.001;
+
     for (unsigned int i = 0; i < maxSteps; i++)
     {
         int count = states.size();
@@ -33,7 +35,18 @@ bool ompl::geometric::PathSimplifierOpt::reduceVertices(PathGeometric &path, uns
             double cost_reduction = cost_old.value() - cost_new.value();
             
             if (cost_reduction > best_cost_reduction) {
-                if (si->checkMotion(states[j-1], states[j+1])) {
+                double distance = si->distance(states[j-1], states[j+1]);
+                unsigned int num = (distance / resolution);
+                base::State *test = si->allocState();
+                bool valid = true;                
+                for (unsigned int i=1; i<num; i++) {
+                    si->getStateSpace()->interpolate(states[j-1], states[j+1], (double)i / (double)num, test);
+                    if (!si->isValid(test)) {
+                        valid = false;
+                        break;
+                    }
+                }
+                if (valid) {
                     p_remove = j;
                     best_cost_reduction = cost_reduction;
                 }
